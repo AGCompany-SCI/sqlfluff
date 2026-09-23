@@ -6,10 +6,60 @@ import pytest
 from _pytest.logging import LogCaptureFixture
 
 from sqlfluff.core import FluffConfig, Linter
+from sqlfluff.core.errors import SQLParseError
 from sqlfluff.dialects.dialect_postgres_keywords import (
     get_keywords,
     priority_keyword_merge,
 )
+
+
+@pytest.mark.parametrize(
+    "datatype,valid",
+    [
+        ("between", False),
+        ("coalesce", False),
+        ("not", False),
+        ("select", False),
+        ("bigint", True),
+        ("dec(5, 2)", True),
+        ("nchar(10)", True),
+        ('"between"', True),
+        ("public.between", True),
+        ("public.select", True),
+    ],
+)
+def test_postgres_datatype_keyword_category(datatype: str, valid: bool) -> None:
+    """Keywords barred from type names remain legal in other identifier roles."""
+    result = Linter(dialect="postgres").parse_string(
+        f"CREATE TABLE test_table (type {datatype} NOT NULL);"
+    )
+    assert any(isinstance(v, SQLParseError) for v in result.violations) != valid
+
+
+def test_postgres_cast_rejects_not_as_datatype() -> None:
+    """Preserve the existing datatype parser's NOT exclusion in casts."""
+    result = Linter(dialect="postgres").parse_string("SELECT NULL::NOT;")
+    assert any(isinstance(v, SQLParseError) for v in result.violations)
+
+
+@pytest.mark.parametrize("datatype", ["between", "coalesce", "not", "select"])
+def test_postgres_datatype_segment_rejects_keyword(
+    datatype: str,
+    caplog: LogCaptureFixture,
+    dialect_specific_segment_not_match: Callable,
+) -> None:
+    """Reject forbidden names at the datatype segment itself."""
+    dialect_specific_segment_not_match("postgres", "DatatypeSegment", datatype, caplog)
+
+
+@pytest.mark.parametrize("datatype", ["bigint", "dec(5, 2)", "nchar(10)"])
+def test_postgres_datatype_segment_preserves_builtin(
+    datatype: str,
+    caplog: LogCaptureFixture,
+    dialect_specific_segment_parses: Callable,
+) -> None:
+    """Keep builtin types outside the restricted generic identifier branch."""
+    dialect_specific_segment_parses("postgres", "DatatypeSegment", datatype, caplog)
 
 
 @pytest.mark.parametrize(

@@ -612,6 +612,35 @@ postgres_dialect.replace(
             casefold=str.lower,
         )
     ),
+    DatatypeIdentifierSegment=SegmentGenerator(
+        lambda dialect: OneOf(
+            RegexParser(
+                r"[A-Z_][A-Z0-9_]*",
+                CodeSegment,
+                type="data_type_identifier",
+                anti_template=r"^("
+                + r"|".join(
+                    sorted(
+                        [
+                            "NOT",
+                            *(
+                                word
+                                for word, category in postgres_keywords
+                                if category == "reserved"
+                            ),
+                            *get_keywords(
+                                postgres_keywords,
+                                "non-reserved-(cannot-be-function-or-type)",
+                            ),
+                        ]
+                    )
+                )
+                + r")$",
+                casefold=str.upper,
+            ),
+            Ref("SingleIdentifierGrammar", exclude=Ref("NakedIdentifierSegment")),
+        )
+    ),
     Expression_C_Grammar=Sequence(
         Ref("WalrusOperatorSegment", optional=True),
         OneOf(
@@ -1079,109 +1108,139 @@ class DatatypeSegment(ansi.DatatypeSegment):
     """
 
     match_grammar = Sequence(
-        # Some dialects allow optional qualification of data types with schemas
-        Sequence(
-            Ref("SingleIdentifierGrammar"),
-            Ref("DotSegment"),
-            allow_gaps=False,
-            optional=True,
-        ),
         OneOf(
-            Ref("WellKnownTextGeometrySegment"),
-            Ref("DateTimeTypeIdentifier"),
-            Ref("StructTypeSegment"),
-            Ref("MapTypeSegment"),
             Sequence(
+                # Builtin types may also be schema-qualified.
+                Sequence(
+                    Ref("SingleIdentifierGrammar"),
+                    Ref("DotSegment"),
+                    allow_gaps=False,
+                    optional=True,
+                ),
                 OneOf(
-                    # numeric types
-                    "SMALLINT",
-                    "INTEGER",
-                    "INT",
-                    "INT2",
-                    "INT4",
-                    "INT8",
-                    "BIGINT",
-                    "FLOAT4",
-                    "FLOAT8",
-                    "REAL",
-                    Sequence("DOUBLE", "PRECISION"),
-                    "SMALLSERIAL",
-                    "SERIAL",
-                    "SERIAL2",
-                    "SERIAL4",
-                    "SERIAL8",
-                    "BIGSERIAL",
-                    # numeric types [(precision)]
+                    Ref("WellKnownTextGeometrySegment"),
+                    Ref("DateTimeTypeIdentifier"),
+                    Ref("StructTypeSegment"),
+                    Ref("MapTypeSegment"),
                     Sequence(
-                        OneOf("FLOAT"),
-                        Ref("BracketedArguments", optional=True),
-                    ),
-                    # numeric types [precision ["," scale])]
-                    Sequence(
-                        OneOf("DECIMAL", "NUMERIC"),
-                        Ref("BracketedArguments", optional=True),
-                    ),
-                    # monetary type
-                    "MONEY",
-                    # character types
-                    OneOf(
-                        Sequence(
-                            OneOf(
-                                "BPCHAR",
-                                "CHAR",
-                                # CHAR VARYING is not documented, but it's
-                                # in the real grammar:
-                                # https://github.com/postgres/postgres/blob/4380c2509d51febad34e1fac0cfaeb98aaa716c5/src/backend/parser/gram.y#L14262
-                                Sequence("CHAR", "VARYING"),
-                                "CHARACTER",
-                                Sequence("CHARACTER", "VARYING"),
-                                "VARCHAR",
+                        OneOf(
+                            # numeric types
+                            "SMALLINT",
+                            "INTEGER",
+                            "INT",
+                            "INT2",
+                            "INT4",
+                            "INT8",
+                            "BIGINT",
+                            "FLOAT4",
+                            "FLOAT8",
+                            "REAL",
+                            Sequence("DOUBLE", "PRECISION"),
+                            "SMALLSERIAL",
+                            "SERIAL",
+                            "SERIAL2",
+                            "SERIAL4",
+                            "SERIAL8",
+                            "BIGSERIAL",
+                            # numeric types [(precision)]
+                            Sequence(
+                                OneOf("FLOAT"),
+                                Ref("BracketedArguments", optional=True),
                             ),
-                            Ref("BracketedArguments", optional=True),
+                            # numeric types [precision ["," scale])]
+                            Sequence(
+                                OneOf("DEC", "DECIMAL", "NUMERIC"),
+                                Ref("BracketedArguments", optional=True),
+                            ),
+                            # monetary type
+                            "MONEY",
+                            # character types
+                            OneOf(
+                                Sequence(
+                                    OneOf(
+                                        "BPCHAR",
+                                        "NCHAR",
+                                        "CHAR",
+                                        # CHAR VARYING is not documented, but it's
+                                        # in the real grammar:
+                                        # https://github.com/postgres/postgres/blob/4380c2509d51febad34e1fac0cfaeb98aaa716c5/src/backend/parser/gram.y#L14262
+                                        Sequence("CHAR", "VARYING"),
+                                        "CHARACTER",
+                                        Sequence("CHARACTER", "VARYING"),
+                                        "VARCHAR",
+                                    ),
+                                    Ref("BracketedArguments", optional=True),
+                                ),
+                                "TEXT",
+                            ),
+                            # binary type
+                            "BYTEA",
+                            # boolean types
+                            OneOf("BOOLEAN", "BOOL"),
+                            # geometric types
+                            OneOf(
+                                "POINT",
+                                "LINE",
+                                "LSEG",
+                                "BOX",
+                                "PATH",
+                                "POLYGON",
+                                "CIRCLE",
+                            ),
+                            # network address types
+                            OneOf("CIDR", "INET", "MACADDR", "MACADDR8"),
+                            # text search types
+                            OneOf("TSVECTOR", "TSQUERY"),
+                            # bit string types
+                            Sequence(
+                                "BIT",
+                                OneOf("VARYING", optional=True),
+                                Ref("BracketedArguments", optional=True),
+                            ),
+                            # uuid type
+                            "UUID",
+                            # xml type
+                            "XML",
+                            # json types
+                            OneOf("JSON", "JSONB"),
+                            # range types
+                            "INT4RANGE",
+                            "INT8RANGE",
+                            "NUMRANGE",
+                            "TSRANGE",
+                            "TSTZRANGE",
+                            "DATERANGE",
+                            # pg_lsn type
+                            "PG_LSN",
+                            # pgvector types
+                            Sequence(
+                                "VECTOR",
+                                Ref("BracketedArguments", optional=True),
+                            ),
                         ),
-                        "TEXT",
                     ),
-                    # binary type
-                    "BYTEA",
-                    # boolean types
-                    OneOf("BOOLEAN", "BOOL"),
-                    # geometric types
-                    OneOf("POINT", "LINE", "LSEG", "BOX", "PATH", "POLYGON", "CIRCLE"),
-                    # network address types
-                    OneOf("CIDR", "INET", "MACADDR", "MACADDR8"),
-                    # text search types
-                    OneOf("TSVECTOR", "TSQUERY"),
-                    # bit string types
+                    # user defined data types
                     Sequence(
-                        "BIT",
-                        OneOf("VARYING", optional=True),
-                        Ref("BracketedArguments", optional=True),
-                    ),
-                    # uuid type
-                    "UUID",
-                    # xml type
-                    "XML",
-                    # json types
-                    OneOf("JSON", "JSONB"),
-                    # range types
-                    "INT4RANGE",
-                    "INT8RANGE",
-                    "NUMRANGE",
-                    "TSRANGE",
-                    "TSTZRANGE",
-                    "DATERANGE",
-                    # pg_lsn type
-                    "PG_LSN",
-                    # pgvector types
-                    Sequence(
-                        "VECTOR",
+                        Ref("DatatypeIdentifierSegment"),
                         Ref("BracketedArguments", optional=True),
                     ),
                 ),
             ),
-            # user defined data types
             Sequence(
-                Ref("DatatypeIdentifierSegment"),
+                Sequence(
+                    Ref("SingleIdentifierGrammar"),
+                    Ref("DotSegment"),
+                    OneOf(
+                        RegexParser(
+                            r"[A-Z_][A-Z0-9_]*",
+                            CodeSegment,
+                            type="data_type_identifier",
+                            casefold=str.upper,
+                        ),
+                        Ref("SingleIdentifierGrammar"),
+                    ),
+                    allow_gaps=False,
+                ),
                 Ref("BracketedArguments", optional=True),
             ),
         ),
