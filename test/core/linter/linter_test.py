@@ -517,6 +517,68 @@ def test__parallel_runner__skip_file_handled_in_run():
     assert "Please report" not in caplog.text
 
 
+@pytest.mark.parametrize("processes", [1, 2])
+def test__linter__large_file_skip_byte_warning_can_be_suppressed(processes):
+    """Suppress warnings for expected large-file skips without changing skip counts."""
+    config = FluffConfig(
+        overrides={
+            "large_file_skip_byte_limit": 5,
+            "large_file_skip_byte_warning": False,
+            "dialect": "ansi",
+            "processes": processes,
+        }
+    )
+    with fluff_log_catcher(logging.WARNING, "sqlfluff.linter") as caplog:
+        result = Linter(config).lint_paths(("test/fixtures/linter/passing.sql",))
+    assert result.files_skipped == 1
+    assert "Length of file" not in caplog.text
+
+
+@pytest.mark.parametrize("processes", [1, 2])
+@pytest.mark.parametrize(
+    "root_warning,file_warning",
+    [(True, False), (False, True)],
+)
+def test__linter__large_file_skip_byte_warning_uses_file_config(
+    tmp_path, processes, root_warning, file_warning
+):
+    """A nested config controls the warning for files in its directory."""
+    (tmp_path / ".sqlfluff").write_text(
+        f"[sqlfluff]\ndialect = ansi\nprocesses = {processes}\n"
+        f"large_file_skip_byte_warning = {root_warning}\n"
+    )
+    child_path = tmp_path / "nested"
+    child_path.mkdir()
+    sql_path = child_path / "big.sql"
+    sql_path.write_text("SELECT 1;\n")
+    (child_path / ".sqlfluff").write_text(
+        "[sqlfluff]\nlarge_file_skip_byte_limit = 5\n"
+        f"large_file_skip_byte_warning = {file_warning}\n"
+    )
+    config = FluffConfig.from_path(str(tmp_path))
+    with fluff_log_catcher(logging.WARNING, "sqlfluff.linter") as caplog:
+        result = Linter(config).lint_paths((str(sql_path),))
+    assert result.files_skipped == 1
+    assert ("Length of file" in caplog.text) is file_warning
+    with fluff_log_catcher(logging.WARNING, "sqlfluff.linter") as parse_log:
+        assert not list(Linter(config).parse_path(str(sql_path)))
+    assert ("Length of file" in parse_log.text) is file_warning
+
+
+def test__linter__large_file_skip_byte_warning_preserves_other_skips(tmp_path):
+    """Suppressing size warnings must not hide unrelated skip reasons."""
+    config = FluffConfig(
+        overrides={"dialect": "ansi", "large_file_skip_byte_warning": False}
+    )
+    lint_runner = runner.SequentialRunner(Linter(config), config)
+    with fluff_log_catcher(logging.WARNING, "sqlfluff.linter") as caplog:
+        lint_runner._handle_skip(
+            SQLFluffSkipFile("dbt project file is missing"), str(tmp_path / "file.sql")
+        )
+    assert lint_runner.skipped_file_count == 1
+    assert "dbt project file is missing" in caplog.text
+
+
 @pytest.mark.parametrize(
     "mock_cpu,in_processes,exp_processes",
     [
