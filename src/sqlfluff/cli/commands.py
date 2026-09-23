@@ -1077,7 +1077,7 @@ def lint(
         result.persist_timing_records(persist_timing)
 
     output_stream.close()
-    if bench:
+    if bench and (format == FormatType.human.value or write_output is not None):
         click.echo("==== overall timings ====")
         click.echo(formatter.cli_table([("Clock time", result.total_time)]))
         timing_summary = result.timing_summary()

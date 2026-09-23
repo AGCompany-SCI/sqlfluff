@@ -856,6 +856,62 @@ def test__cli__parse_verbosity_thresholds(args, file_timings, overall_timings):
     assert ("==== overall timings ====" in result.stdout) is overall_timings
 
 
+@pytest.mark.parametrize(
+    "output_format",
+    [
+        "json",
+        "yaml",
+        "sarif",
+        "gitlab",
+        "github-annotation",
+        "github-annotation-native",
+        "none",
+    ],
+)
+def test__cli__lint_bench_preserves_machine_output(output_format):
+    """Benchmark timings must not corrupt serialized stdout."""
+    result = invoke_assert_code(
+        args=[
+            lint,
+            [
+                "--format",
+                output_format,
+                "--bench",
+                "--disable-progress-bar",
+                "--dialect",
+                "ansi",
+                "test/fixtures/cli/passing_a.sql",
+            ],
+        ]
+    )
+    if output_format == "yaml":
+        yaml.safe_load(result.stdout)
+    elif output_format in {"json", "sarif", "gitlab"}:
+        json.loads(result.stdout)
+    assert "==== overall timings ====" not in result.stdout
+
+
+def test__cli__lint_bench_with_output_file_keeps_timings(tmp_path):
+    """Benchmarks can still print when serialized output is written to a file."""
+    output_file = tmp_path / "lint.json"
+    result = invoke_assert_code(
+        args=[
+            lint,
+            [
+                "--format",
+                "json",
+                "--bench",
+                "--write-output",
+                str(output_file),
+                "--disable-progress-bar",
+                "test/fixtures/cli/passing_a.sql",
+            ],
+        ]
+    )
+    json.loads(output_file.read_text())
+    assert "==== overall timings ====" in result.stdout
+
+
 def test__cli__verbose_machine_output_stays_serialized():
     """Verbose logging should not contaminate machine-readable stdout."""
     result = invoke_assert_code(
