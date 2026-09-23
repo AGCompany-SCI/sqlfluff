@@ -600,6 +600,109 @@ test_pass_oracle_slash_with_extra_spacing:
     core:
       dialect: oracle
 
+test_fail_oracle_missing_semicolons_before_later_batches:
+  # The Oracle parser groups statements into batches. Requiring a final
+  # semicolon must check each batch, not only the final one in the file.
+  fail_str: |
+    DELETE FROM code_detail WHERE code_type = 'PLTQ';
+    --
+    DELETE FROM code_head WHERE code_type = 'PLTQ'
+    -- Next batch
+    INSERT INTO code_head(code_type) VALUES('PLTQ');
+    --
+    INSERT INTO code_head(code_type) VALUES('RSCD')
+    -- Next batch
+    INSERT INTO code_head(code_type) VALUES('SLBK')
+  fix_str: |
+    DELETE FROM code_detail WHERE code_type = 'PLTQ';
+    --
+    DELETE FROM code_head WHERE code_type = 'PLTQ';
+    -- Next batch
+    INSERT INTO code_head(code_type) VALUES('PLTQ');
+    --
+    INSERT INTO code_head(code_type) VALUES('RSCD');
+    -- Next batch
+    INSERT INTO code_head(code_type) VALUES('SLBK');
+  configs:
+    core:
+      dialect: oracle
+    rules:
+      convention.terminator:
+        require_final_semicolon: true
+        multiline_newline: false
+
+test_fail_oracle_plsql_missing_semicolon_before_slash:
+  fail_str: |
+    BEGIN
+        NULL;
+    END
+    /
+  fix_str: |
+    BEGIN
+        NULL;
+    END;
+    /
+  configs:
+    core:
+      dialect: oracle
+    rules:
+      convention.terminator:
+        require_final_semicolon: true
+        multiline_newline: true
+
+test_fail_oracle_multiple_batches_with_multiline_newline:
+  # Fixes in adjacent batches must remain distinct when adding terminators.
+  fail_str: |
+    DELETE FROM t WHERE a = 1;
+    DELETE FROM t WHERE a = 2
+    -- next
+    INSERT INTO t(a) VALUES(3)
+  fix_str: |
+    DELETE FROM t WHERE a = 1;
+    DELETE FROM t WHERE a = 2;
+    -- next
+    INSERT INTO t(a) VALUES(3);
+  configs:
+    core:
+      dialect: oracle
+    rules:
+      convention.terminator:
+        require_final_semicolon: true
+        multiline_newline: true
+
+test_fail_oracle_plsql_semicolon_spacing_before_slash:
+  fail_str: |
+    BEGIN
+        NULL;
+    END ;
+    /
+  fix_str: |
+    BEGIN
+        NULL;
+    END;
+    /
+  configs:
+    core:
+      dialect: oracle
+    rules:
+      convention.terminator:
+        require_final_semicolon: true
+        multiline_newline: true
+
+test_pass_oracle_multiline_sql_semicolon_before_slash:
+  pass_str: |
+    SELECT
+        1
+    ;
+    /
+  configs:
+    core:
+      dialect: oracle
+    rules:
+      convention.terminator:
+        require_final_semicolon: true
+        multiline_newline: true
+
 # T-SQL specific tests for batch segment handling
 test_pass_tsql_single_statement_with_semicolon:
   pass_str: |
