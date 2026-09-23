@@ -27,6 +27,76 @@ redundant_else_null:
         end
     from x
 
+redundant_else_null_preserves_comment:
+  fail_str: |
+    select
+        case
+            when name = 'cat' then 'meow'
+            when name = 'dog' then 'woof'
+            else /* keep default */ null
+        end
+    from x
+
+  fix_str: |
+    select
+        case
+            when name = 'cat' then 'meow'
+            when name = 'dog' then 'woof'
+            /* keep default */
+        end
+    from x
+
+redundant_else_null_preserves_multiple_comments:
+  fail_str: |
+    select
+        case when name = 'cat' then 'meow'
+            else /* first */ /* second */ null
+        end
+    from x
+
+  fix_str: |
+    select
+        case when name = 'cat' then 'meow'
+            /* first */ /* second */
+        end
+    from x
+
+redundant_else_null_preserves_line_comment:
+  fail_str: |
+    select
+        case when name = 'cat' then 'meow'
+            else -- keep default
+                null
+        end
+    from x
+
+  fix_str: |
+    select
+        case when name = 'cat' then 'meow'
+            -- keep default
+        end
+    from x
+
+redundant_else_null_preserves_line_comment_before_end:
+  fail_str: |
+    select case when x then 1 else -- keep default
+        null end
+
+  fix_str: |
+    select case when x then 1 -- keep default
+     end
+
+redundant_else_null_preserves_following_comment:
+  fail_str: |
+    select case when x then 1 else -- first
+     null /* second */
+     end
+
+  fix_str: |
+    select case when x then 1 -- first
+     /* second */
+     end
+
 alternate_case_when_syntax:
 
   fail_str: |
