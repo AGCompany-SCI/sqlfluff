@@ -24,9 +24,10 @@ be ignored by quoting their code or the category.
     SeLeCt from tBl ;       -- noqa: PRS
 
 .. note::
-   It should be noted that ignoring ``TMP`` and ``PRS`` errors can lead to
-   incorrect ``sqlfluff lint`` and ``sqfluff fix`` results as `SQLFluff` can
-   misinterpret the SQL being analysed.
+   Ignoring templating (``TMP``) or parsing (``PRS``) errors can lead to
+   incorrect ``sqlfluff lint`` and ``sqlfluff fix`` results because SQLFluff
+   may misinterpret the SQL being analysed. See :ref:`ignoring_error_types`
+   for all error categories and their codes.
 
 .. _`flake8's ignore`: https://flake8.pycqa.org/en/3.1.1/user/ignoring-errors.html#in-line-ignoring-errors
 
@@ -108,13 +109,35 @@ The patterns in ``ignore_paths`` use the same matching rules as
 .. _`Docker's`: https://docs.docker.com/engine/reference/builder/#dockerignore-file
 .. _`pathspec library`: https://python-path-specification.readthedocs.io/
 
+.. _ignoring_error_types:
+
 Ignoring types of errors
 ^^^^^^^^^^^^^^^^^^^^^^^^
 General *categories* of errors can be ignored using the ``--ignore`` command
-line option or the ``ignore`` setting in :ref:`sqlfluffignore`. Types of errors
-that can be ignored include:
+line option or the ``ignore`` setting in a :code:`.sqlfluff` configuration
+file. The available categories and the codes shown in lint output are:
 
-* :code:`lexing`
-* :code:`linting`
-* :code:`parsing`
-* :code:`templating`
+* :code:`templating` (``TMP``): the templater could not render part of the
+  source SQL, for example because a template variable is undefined.
+* :code:`lexing` (``LXR``): SQLFluff could not split the rendered text into
+  tokens.
+* :code:`parsing` (``PRS``): the tokens did not match the selected dialect's
+  grammar.
+* :code:`linting`: a lint rule found a violation. Each rule has its own code,
+  such as ``CP01``; there is no single code for all linting violations.
+
+For example, to ignore parsing errors for a command or a project:
+
+.. code-block:: console
+
+   sqlfluff lint query.sql --ignore parsing
+
+.. code-block:: cfg
+
+   [sqlfluff]
+   ignore = parsing
+
+Multiple categories can be separated by commas, for example
+``--ignore parsing,templating``. To ignore one rule or one error on a line,
+use its code with :ref:`inline_ignoring_errors`. A :ref:`sqlfluffignore` file
+selects *files* by path; it does not configure error categories.
