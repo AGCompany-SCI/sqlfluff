@@ -11,6 +11,7 @@ from sqlfluff.core.parser import (
     Anything,
     BaseSegment,
     Bracketed,
+    CodeSegment,
     Dedent,
     Delimited,
     IdentifierSegment,
@@ -189,6 +190,19 @@ redshift_dialect.sets("datetime_units").update(
 )
 
 redshift_dialect.replace(
+    # Redshift's type grammar differs from PostgreSQL's and accepts qualified
+    # builtins such as pg_catalog.int4 through this identifier.
+    DatatypeIdentifierSegment=SegmentGenerator(
+        lambda dialect: OneOf(
+            RegexParser(
+                r"[A-Z_][A-Z0-9_]*",
+                CodeSegment,
+                type="data_type_identifier",
+                anti_template=r"^(NOT)$",
+            ),
+            Ref("SingleIdentifierGrammar", exclude=Ref("NakedIdentifierSegment")),
+        )
+    ),
     LateralColumnAliasExpressionGrammar=Sequence(
         Ref("ExpressionSegment"),
         Ref("AliasExpressionSegment"),
