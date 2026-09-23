@@ -416,6 +416,45 @@ def test__templater_custom_regex():
     assert str(outstr) == "SELECT bla FROM blob WHERE id = john"
 
 
+def test__templater_multiple_param_styles_from_config():
+    """A file may mix common placeholder syntaxes without a custom regex."""
+    config = FluffConfig.from_string(
+        "[sqlfluff]\n"
+        "dialect = ansi\n"
+        "[sqlfluff:templater:placeholder]\n"
+        "param_style = pyformat, percent, brackets, colon\n"
+        "customer = 42\n"
+        "1 = 99\n"
+        "region = 'west'\n"
+        "limit = 5\n"
+    )
+    templated, _ = PlaceholderTemplater().process(
+        in_str="SELECT %(customer)s, %s, {region}, :limit",
+        fname="test.sql",
+        config=config,
+    )
+    assert str(templated) == "SELECT 42, 99, 'west', 5"
+
+
+def test__templater_multiple_param_styles_prefer_complete_match():
+    """Overlapping styles should consume the complete placeholder."""
+    templated, _ = PlaceholderTemplater(
+        override_context={
+            "param_style": "dollar, dollar_surround",
+            "name": "42",
+        }
+    ).process(in_str="SELECT $name$", fname="test.sql")
+    assert str(templated) == "SELECT 42"
+
+
+def test__templater_brackets_within_identifier():
+    """Bracket placeholders may supply part of a table name."""
+    templated, _ = PlaceholderTemplater(
+        override_context={"param_style": "brackets", "region": "west"}
+    ).process(in_str="SELECT * FROM events_{region}", fname="test.sql")
+    assert str(templated) == "SELECT * FROM events_west"
+
+
 def test__templater_setup():
     """Test the exception raised when config is incomplete or ambiguous."""
     t = PlaceholderTemplater(override_context=dict(name="'john'"))
