@@ -183,6 +183,10 @@ class SQLFluffSkipFile(RuntimeError):
     pass
 
 
+class SQLFluffSkipFileByteLimit(SQLFluffSkipFile):
+    """A file skipped because it exceeds the configured byte limit."""
+
+
 class SQLLexError(SQLBaseError):
     """An error which occurred during lexing.
 

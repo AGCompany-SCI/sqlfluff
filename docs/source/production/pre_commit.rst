@@ -97,3 +97,16 @@ being passed to *SQLFluff* and so silence any warnings about the
 
 .. _`top level config`: https://pre-commit.com/#top_level-exclude
 .. _`hook specific config`: https://pre-commit.com/#config-exclude
+
+If you intentionally skip SQL files using the byte limit, you can silence the
+warning for each skipped file in your :code:`.sqlfluff` configuration:
+
+.. code-block:: cfg
+
+    [sqlfluff]
+    large_file_skip_byte_limit = 10000
+    large_file_skip_byte_warning = False
+
+The files remain skipped and are still counted. The separate
+:code:`large_file_skip_fail` setting continues to control whether skipped files
+cause a non-zero exit code.

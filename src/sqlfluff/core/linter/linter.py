@@ -14,6 +14,7 @@ from sqlfluff.core.config import FluffConfig, progress_bar_configuration
 from sqlfluff.core.errors import (
     SQLBaseError,
     SQLFluffSkipFile,
+    SQLFluffSkipFileByteLimit,
     SQLLexError,
     SQLLintError,
     SQLParseError,
@@ -147,7 +148,7 @@ class Linter:
             # Get the file size
             file_size = os.path.getsize(fname)
             if file_size > limit:
-                raise SQLFluffSkipFile(
+                raise SQLFluffSkipFileByteLimit(
                     f"Length of file {fname!r} is {file_size} bytes which is over "
                     f"the limit of {limit} bytes. Skipping to avoid parser lock. "
                     "Users can increase this limit in their config by setting the "
@@ -1268,7 +1269,12 @@ class Linter:
                     fname, self.config
                 )
             except SQLFluffSkipFile as s:
-                linter_logger.warning(str(s))
+                if not isinstance(
+                    s, SQLFluffSkipFileByteLimit
+                ) or self.config.make_child_from_path(fname).get(
+                    "large_file_skip_byte_warning"
+                ):
+                    linter_logger.warning(str(s))
                 continue
             yield self.parse_string(
                 raw_file,

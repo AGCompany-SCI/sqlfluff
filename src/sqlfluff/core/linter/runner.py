@@ -22,7 +22,7 @@ from types import TracebackType
 from typing import Callable, Optional, Union
 
 from sqlfluff.core import FluffConfig, Linter
-from sqlfluff.core.errors import SQLFluffSkipFile
+from sqlfluff.core.errors import SQLFluffSkipFile, SQLFluffSkipFileByteLimit
 from sqlfluff.core.linter import LintedFile, RenderedFile
 from sqlfluff.core.linter.common import DeferredRenderTask
 from sqlfluff.core.plugin.host import is_main_process
@@ -46,6 +46,15 @@ class BaseRunner(ABC):
 
     pass_formatter = True
 
+    def _handle_skip(self, err: SQLFluffSkipFile, fname: Optional[str]) -> None:
+        """Count a skipped file and warn according to its own config."""
+        config = self.config.make_child_from_path(fname) if fname else self.config
+        if not isinstance(err, SQLFluffSkipFileByteLimit) or config.get(
+            "large_file_skip_byte_warning"
+        ):
+            linter_logger.warning(str(err))
+        self.skipped_file_count += 1
+
     def iter_rendered(self, fnames: list[str]) -> Iterator[tuple[str, RenderedFile]]:
         """Iterate through rendered files ready for linting."""
         for fname in self.linter.templater.sequence_files(
@@ -54,8 +63,7 @@ class BaseRunner(ABC):
             try:
                 yield fname, self.linter.render_file(fname, self.config)
             except SQLFluffSkipFile as s:
-                linter_logger.warning(str(s))
-                self.skipped_file_count += 1
+                self._handle_skip(s, fname)
 
     def iter_partials(
         self,
@@ -199,8 +207,7 @@ class ParallelRunner(BaseRunner):
                         # A file was skipped (e.g. exceeded
                         # large_file_skip_byte_limit). Log a plain warning,
                         # not the "please report as bug" message.
-                        linter_logger.warning(str(lint_result.ee))
-                        self.skipped_file_count += 1
+                        self._handle_skip(lint_result.ee, lint_result.fname)
                     else:
                         try:
                             lint_result.reraise()
