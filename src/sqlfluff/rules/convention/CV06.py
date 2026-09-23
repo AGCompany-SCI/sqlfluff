@@ -336,7 +336,12 @@ class Rule_CV06(BaseRule):
         return fixes
 
     def _ensure_final_semicolon(
-        self, parent_segment: BaseSegment
+        self,
+        parent_segment: BaseSegment,
+        report_at_statement_end: bool = False,
+        before_slash: bool = False,
+        slash_block: bool = False,
+        file_segment: Optional[BaseSegment] = None,
     ) -> Optional[LintResult]:
         # Get the last statement in the file (may be nested in a batch)
         last_statement = self._get_last_statement(parent_segment)
@@ -393,22 +398,32 @@ class Rule_CV06(BaseRule):
         if semi_colon_exist_flag:
             return None  # Semicolon already exists
 
-        # Iterate backwards over complete stack to find anchor point
-        # Start from the statement container, not the parent
-        anchor_segment = statement_container.segments[-1]
-        trigger_segment = statement_container.segments[-1]
-        is_one_line = False
-        before_segment = []
-        for segment in statement_container.segments[::-1]:
-            anchor_segment = segment
-            if segment.is_code:
-                is_one_line = self._is_one_line_statement(
-                    parent_segment, last_statement
-                )
-                break
-            elif not segment.is_meta:
-                before_segment.append(segment)
-            trigger_segment = segment
+        if before_slash:
+            # A slash executes the batch but does not supply the closing
+            # semicolon of a PL/SQL block. Insert before the slash, next to
+            # the statement, even with multiline_newline enabled.
+            anchor_segment = last_statement
+            trigger_segment = last_statement
+            is_one_line = slash_block or not any(
+                last_statement.recursive_crawl("newline")
+            )
+            before_segment: list[BaseSegment] = []
+        else:
+            # Iterate backwards over the container to find the final code.
+            anchor_segment = statement_container.segments[-1]
+            trigger_segment = statement_container.segments[-1]
+            is_one_line = False
+            before_segment = []
+            for segment in statement_container.segments[::-1]:
+                anchor_segment = segment
+                if segment.is_code:
+                    is_one_line = self._is_one_line_statement(
+                        parent_segment, last_statement
+                    )
+                    break
+                elif not segment.is_meta:
+                    before_segment.append(segment)
+                trigger_segment = segment
 
         self.logger.debug("Trigger on: %s", trigger_segment)
         self.logger.debug("Anchoring on: %s", anchor_segment)
@@ -422,7 +437,9 @@ class Rule_CV06(BaseRule):
             if not semicolon_newline:
                 fixes = [
                     LintFix.create_after(
-                        self._choose_anchor_segment(
+                        last_statement
+                        if report_at_statement_end
+                        else self._choose_anchor_segment(
                             parent_segment,
                             "create_after",
                             anchor_segment,
@@ -443,10 +460,40 @@ class Rule_CV06(BaseRule):
                 ) = self._handle_preceding_inline_comments(
                     before_segment, anchor_segment
                 )
+                if report_at_statement_end and file_segment:
+                    # Oracle can place a same-line comment outside its batch.
+                    # Keep noqa comments on the statement line when adding a
+                    # newline and semicolon after that batch.
+                    last_code = next(
+                        raw
+                        for raw in reversed(last_statement.raw_segments)
+                        if raw.is_code
+                    )
+                    following_batch = False
+                    for child in file_segment.segments:
+                        if child is parent_segment:
+                            following_batch = True
+                        elif following_batch:
+                            if child.is_type("newline") or child.is_code:
+                                break
+                            if (
+                                child.is_comment
+                                and not child.is_type("block_comment")
+                                and child.pos_marker
+                                and last_code.pos_marker
+                                and child.pos_marker.working_line_no
+                                == last_code.pos_marker.working_line_no
+                            ):
+                                anchor_segment = child
+                                break
                 self.logger.debug("Revised anchor on: %s", anchor_segment)
                 fixes = [
                     LintFix.create_after(
-                        self._choose_anchor_segment(
+                        anchor_segment
+                        if report_at_statement_end and anchor_segment.is_comment
+                        else last_statement
+                        if report_at_statement_end
+                        else self._choose_anchor_segment(
                             parent_segment,
                             "create_after",
                             anchor_segment,
@@ -458,10 +505,16 @@ class Rule_CV06(BaseRule):
                         ],
                     )
                 ]
-            return LintResult(
-                anchor=trigger_segment,
-                fixes=fixes,
-            )
+            if report_at_statement_end:
+                trigger_segment = next(
+                    (
+                        raw
+                        for raw in reversed(last_statement.raw_segments)
+                        if raw.is_code
+                    ),
+                    trigger_segment,
+                )
+            return LintResult(anchor=trigger_segment, fixes=fixes)
         return None  # pragma: no cover
 
     def _eval(self, context: RuleContext) -> list[LintResult]:
@@ -486,7 +539,30 @@ class Rule_CV06(BaseRule):
             if seg.is_type("batch"):
                 containers_to_process.append(seg)
 
+        oracle_batches = (
+            context.dialect.name == "oracle" and len(containers_to_process) > 1
+        )
         for container in containers_to_process:
+            has_slash_executor = oracle_batches and any(
+                child.is_type("slash_buffer_executor") for child in container.segments
+            )
+            last_statement = self._get_last_statement(container)
+            slash_block = has_slash_executor and bool(
+                last_statement
+                and any(last_statement.recursive_crawl("begin_end_block"))
+            )
+            final_code_before_slash = (
+                next(
+                    (
+                        child
+                        for child in reversed(container.segments)
+                        if child.is_code and not child.is_type("slash_buffer_executor")
+                    ),
+                    None,
+                )
+                if has_slash_executor
+                else None
+            )
             for idx, seg in enumerate(container.segments):
                 res = None
                 # First we can simply handle the case of existing semi-colon alignment.
@@ -496,12 +572,25 @@ class Rule_CV06(BaseRule):
                     self.logger.debug("Handling semi-colon: %s", seg)
 
                     if self._is_segment_semicolon(seg):
-                        res = self._handle_semicolon(seg, container)
-                # Otherwise handle the end of the container separately.
-                # Only check for final semicolon at the file level, not batch level
+                        if slash_block and seg is final_code_before_slash:
+                            # Keep the block terminator adjacent to END, even
+                            # if multiline_newline would move it onto a line
+                            # of its own before the slash executor.
+                            info = self._get_segment_move_context(seg, container)
+                            res = self._handle_semicolon_same_line(seg, container, info)
+                        else:
+                            res = self._handle_semicolon(seg, container)
+                # Oracle batches can end before the end of the file, so each
+                # needs its own final-semicolon check. T-SQL batches retain
+                # their existing file-level behavior. A slash executes an
+                # Oracle batch, but the statement may still need a semicolon
+                # immediately before the slash.
                 elif (
                     self.require_final_semicolon
-                    and container is context.segment  # Only for file, not batch
+                    and (
+                        (container is context.segment and not oracle_batches)
+                        or (oracle_batches and container.is_type("batch"))
+                    )
                     and idx == len(container.segments) - 1
                 ):
                     self.logger.debug("Handling final segment: %s", seg)
@@ -510,7 +599,14 @@ class Rule_CV06(BaseRule):
                     )
 
                     if not has_final_non_semicolon_terminator:
-                        res = self._ensure_final_semicolon(container)
+                        res = self._ensure_final_semicolon(
+                            container,
+                            report_at_statement_end=oracle_batches
+                            and container.is_type("batch"),
+                            before_slash=has_slash_executor,
+                            slash_block=slash_block,
+                            file_segment=context.segment if oracle_batches else None,
+                        )
                 if res:
                     results.append(res)
 
