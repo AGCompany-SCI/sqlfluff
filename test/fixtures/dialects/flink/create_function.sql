@@ -1,0 +1,7 @@
+CREATE FUNCTION ARRAY_AGGR AS 'my.udf.ArrayAggr';
+
+CREATE TEMPORARY FUNCTION IF NOT EXISTS my_func AS 'my.udf.MyFunc' LANGUAGE JAVA;
+
+CREATE TEMPORARY SYSTEM FUNCTION sys_func AS 'my.udf.SysFunc';
+
+CREATE FUNCTION jar_func AS 'my.udf.JarFunc' LANGUAGE JAVA USING JAR 'file:///udf.jar';

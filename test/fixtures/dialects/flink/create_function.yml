@@ -1,0 +1,56 @@
+# YML test files are auto-generated from SQL files and should not be edited by
+# hand. To help enforce this, the "hash" field in the file must match a hash
+# computed by SQLFluff when running the tests. Please run
+# `python test/generate_parse_fixture_yml.py`  to generate them after adding or
+# altering SQL files.
+_hash: c620af6a92de53449e0fb903cd676ed1bfa24d749126269b00f6bcbb460f87d3
+file:
+- statement:
+    create_function_statement:
+    - keyword: CREATE
+    - keyword: FUNCTION
+    - function_name:
+        function_name_identifier: ARRAY_AGGR
+    - keyword: AS
+    - quoted_literal: "'my.udf.ArrayAggr'"
+- statement_terminator: ;
+- statement:
+    create_function_statement:
+    - keyword: CREATE
+    - keyword: TEMPORARY
+    - keyword: FUNCTION
+    - keyword: IF
+    - keyword: NOT
+    - keyword: EXISTS
+    - function_name:
+        function_name_identifier: my_func
+    - keyword: AS
+    - quoted_literal: "'my.udf.MyFunc'"
+    - keyword: LANGUAGE
+    - keyword: JAVA
+- statement_terminator: ;
+- statement:
+    create_function_statement:
+    - keyword: CREATE
+    - keyword: TEMPORARY
+    - keyword: SYSTEM
+    - keyword: FUNCTION
+    - function_name:
+        function_name_identifier: sys_func
+    - keyword: AS
+    - quoted_literal: "'my.udf.SysFunc'"
+- statement_terminator: ;
+- statement:
+    create_function_statement:
+    - keyword: CREATE
+    - keyword: FUNCTION
+    - function_name:
+        function_name_identifier: jar_func
+    - keyword: AS
+    - quoted_literal: "'my.udf.JarFunc'"
+    - keyword: LANGUAGE
+    - keyword: JAVA
+    - keyword: USING
+    - keyword: JAR
+    - quoted_literal: "'file:///udf.jar'"
+- statement_terminator: ;

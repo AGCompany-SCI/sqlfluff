@@ -1,6 +1,7 @@
 """Tests for the FlinkSQL dialect."""
 
 from sqlfluff.core import FluffConfig, Linter
+from sqlfluff.core.errors import SQLParseError
 
 
 class TestFlinkSQLDialect:
@@ -390,3 +391,15 @@ class TestFlinkSQLComplexExamples:
         """
         result = linter.lint_string(sql)
         assert result is not None
+
+    def test_flink_function_and_statement_set_reject_invalid_syntax(self):
+        """The new grammars require supported languages and insert terminators."""
+        linter = Linter(config=FluffConfig(overrides={"dialect": "flink"}))
+        for sql in (
+            "CREATE FUNCTION f AS 'x' LANGUAGE RUBY;",
+            "CREATE FUNCTION f AS 'x' USING ARTIFACT 'uri';",
+            "CREATE FUNCTION f AS 'x' WITH ('k' = 'v');",
+            "EXECUTE STATEMENT SET BEGIN INSERT INTO t1 SELECT * FROM v1 END;",
+        ):
+            result = linter.lint_string(sql)
+            assert any(isinstance(v, SQLParseError) for v in result.violations)

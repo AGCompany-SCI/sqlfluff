@@ -571,6 +571,43 @@ class SetStatementSegment(BaseSegment):
     )
 
 
+class CreateFunctionStatementSegment(ansi.CreateFunctionStatementSegment):
+    """A Flink SQL CREATE FUNCTION statement."""
+
+    match_grammar = Sequence(
+        "CREATE",
+        OneOf(Sequence("TEMPORARY", "SYSTEM"), "TEMPORARY", optional=True),
+        "FUNCTION",
+        Ref("IfNotExistsGrammar", optional=True),
+        Ref("FunctionNameSegment"),
+        "AS",
+        Ref("QuotedLiteralSegment"),
+        Sequence("LANGUAGE", OneOf("JAVA", "SCALA", "PYTHON"), optional=True),
+        Sequence(
+            "USING",
+            Delimited(Sequence("JAR", Ref("QuotedLiteralSegment"))),
+            optional=True,
+        ),
+    )
+
+
+class ExecuteStatementSetSegment(BaseSegment):
+    """Execute multiple Flink INSERT statements as a single statement set."""
+
+    type = "execute_statement_set"
+    match_grammar = Sequence(
+        "EXECUTE",
+        "STATEMENT",
+        "SET",
+        "BEGIN",
+        AnyNumberOf(
+            Sequence(Ref("InsertStatementSegment"), Ref("SemicolonSegment")),
+            min_times=1,
+        ),
+        "END",
+    )
+
+
 class StatementSegment(ansi.StatementSegment):
     """A generic segment, to any of its child subsegments."""
 
@@ -582,6 +619,7 @@ class StatementSegment(ansi.StatementSegment):
             Ref("DescribeStatementSegment"),
             Ref("ShowStatementsSegment"),
             Ref("SetStatementSegment"),
+            Ref("ExecuteStatementSetSegment"),
         ],
     )
 
