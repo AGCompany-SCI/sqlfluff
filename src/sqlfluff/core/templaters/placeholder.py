@@ -55,6 +55,8 @@ KNOWN_STYLES = {
     ),
     # e.g. WHERE bla = %s
     "percent": regex.compile(r"(?<![:\w\x5c])%s", regex.UNICODE),
+    # e.g. WHERE bla = {name}
+    "brackets": regex.compile(r"\{(?P<param_name>\w+)\}", regex.UNICODE),
     # e.g. WHERE bla = &s or WHERE bla = &{s} or USE DATABASE {ENV}_MARKETING
     "ampersand": regex.compile(r"(?<!&)&{?(?P<param_name>[\w]+)}?", regex.UNICODE),
 }
@@ -100,13 +102,19 @@ class PlaceholderTemplater(RawTemplater):
             )
         elif "param_style" in live_context:
             param_style = live_context["param_style"]
-            if param_style not in KNOWN_STYLES:
-                raise ValueError(
-                    'Unknown param_style "{}", available are: {}'.format(
-                        param_style, list(KNOWN_STYLES.keys())
+            param_styles = [style.strip() for style in param_style.split(",")]
+            for style in param_styles:
+                if style not in KNOWN_STYLES:
+                    raise ValueError(
+                        'Unknown param_style "{}", available are: {}'.format(
+                            style, list(KNOWN_STYLES.keys())
+                        )
                     )
-                )
-            live_context["__bind_param_regex"] = KNOWN_STYLES[param_style]
+            live_context["__bind_param_regex"] = (
+                KNOWN_STYLES[param_styles[0]]
+                if len(param_styles) == 1
+                else [KNOWN_STYLES[style] for style in param_styles]
+            )
         else:
             raise ValueError(
                 "No param_regex nor param_style was provided to the placeholder "
@@ -150,10 +158,22 @@ class PlaceholderTemplater(RawTemplater):
         out_str = ""
 
         regex = context["__bind_param_regex"]
+        if isinstance(regex, list):
+            # Prefer the earliest match, then the longest match at that point.
+            # This avoids consuming `$name` when `$name$` is also configured.
+            found_params = sorted(
+                (match for pattern in regex for match in pattern.finditer(in_str)),
+                key=lambda match: (match.start(), -match.end()),
+            )
+        else:
+            found_params = regex.finditer(in_str)
         # when the param has no name, use a 1-based index
         param_counter = 1
-        for found_param in regex.finditer(in_str):
+        for found_param in found_params:
             span = found_param.span()
+            if span[0] < last_pos_raw:
+                # Another configured style already matched this source span.
+                continue
             if "param_name" not in found_param.groupdict():
                 param_name = str(param_counter)
                 param_counter += 1

@@ -62,6 +62,9 @@ A few common styles are supported:
     -- percent
     WHERE bla = %s
 
+    -- brackets
+    WHERE bla = {my_name}
+
     -- ampersand
     WHERE bla = &s or WHERE bla = &{s} or USE DATABASE MARK_{ENV}
 
@@ -73,8 +76,18 @@ These can be configured by setting `param_style` to the names above:
     param_style = colon
     my_name = 'john'
 
-then you can set sample values for each parameter, like `my_name`
-above. Notice that the value needs to be escaped as it will be replaced as a
+You can also list multiple styles for files that mix placeholder syntaxes:
+
+.. code-block:: cfg
+
+    [sqlfluff:templater:placeholder]
+    param_style = pyformat, percent, brackets, colon
+    my_name = 'john'
+
+When two configured styles match at the same location, the longest match wins.
+
+You can set sample values for each parameter, like `my_name` above. Notice
+that the value needs to be escaped as it will be replaced as a
 string during parsing. When the sample values aren't provided, the templater
 will use parameter names themselves by default.
 
