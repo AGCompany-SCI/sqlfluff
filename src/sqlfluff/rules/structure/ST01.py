@@ -2,6 +2,7 @@
 
 from typing import Optional
 
+from sqlfluff.core.parser import NewlineSegment
 from sqlfluff.core.rules import BaseRule, LintFix, LintResult, RuleContext
 from sqlfluff.core.rules.crawlers import SegmentSeekerCrawler
 from sqlfluff.utils.functional import FunctionalContext, sp
@@ -62,6 +63,50 @@ class Rule_ST01(BaseRule):
         if else_clause and else_clause.children(
             lambda child: child.raw_upper == "NULL"
         ):
+            clause_segments = else_clause[0].segments
+            comment_positions = [
+                i for i, seg in enumerate(clause_segments) if seg.is_type("comment")
+            ]
+            if comment_positions:
+                # Preserve comments from the otherwise redundant clause.
+                comment_span = clause_segments[
+                    comment_positions[0] : comment_positions[-1] + 1
+                ]
+                edit_segments = list(comment_span)
+                following_case_segments = context.segment.segments[
+                    context.segment.segments.index(else_clause[0]) + 1 :
+                ]
+                next_segment = next(
+                    (
+                        seg
+                        for seg in following_case_segments
+                        if not seg.is_meta and not seg.is_type("whitespace")
+                    ),
+                    None,
+                )
+                if comment_span[-1].is_type("inline_comment") and not (
+                    next_segment and next_segment.is_type("newline")
+                ):
+                    # A line comment must not swallow a following comment or
+                    # END when NULL shared their line.
+                    edit_segments.append(
+                        next(
+                            (
+                                seg
+                                for seg in clause_segments[comment_positions[-1] + 1 :]
+                                if seg.is_type("newline")
+                            ),
+                            NewlineSegment(),
+                        )
+                    )
+                return LintResult(
+                    anchor=context.segment,
+                    fixes=[
+                        LintFix.replace(
+                            else_clause[0], edit_segments, source=comment_span
+                        )
+                    ],
+                )
             # Found ELSE with NULL. Delete the whole else clause as well as
             # indents/whitespaces/meta preceding the ELSE. :TRICKY: Note
             # the use of reversed() to make select() effectively search in
