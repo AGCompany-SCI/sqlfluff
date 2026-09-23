@@ -28,12 +28,20 @@ SerializedObject = dict[str, Union[str, int, bool, list["SerializedObject"]]]
 
 
 def _extract_position(segment: Optional["BaseSegment"]) -> dict[str, int]:
-    """If a segment is present and is a literal, return it's source length."""
+    """Return a source range when it identifies a precise section of the file."""
     if segment:
         position = segment.pos_marker
         assert position
         if position.is_literal():
             return position.to_source_dict()
+        # A templated segment can still point to one unambiguous source line.
+        # This commonly happens when a lint violation is anchored to a Jinja
+        # expression. Serializing that source span is more useful than omitting
+        # all range fields from the diagnostic.
+        if position.source_slice.start < position.source_slice.stop:
+            source_range = position.to_source_dict()
+            if source_range["start_line_no"] == source_range["end_line_no"]:
+                return source_range
     # An empty location is an indicator of not being able to accurately
     # represent the location.
     return {}  # pragma: no cover

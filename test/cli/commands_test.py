@@ -2239,6 +2239,44 @@ def test__cli__command_lint_serialize_multiple_files(serialize, write_file, tmp_
         raise Exception
 
 
+def test__cli__lint_json_templated_long_line_has_source_range(tmp_path):
+    """LT05 should serialize a useful source range for a Jinja macro."""
+    source = (
+        "WITH test AS (\n"
+        "    SELECT\n"
+        "        {{ my_very_long_macro_call_goes_here("
+        "'my_very_long_column_name_goes_here') }} AS my_column,\n"
+        "        'test' AS my_column2\n"
+        "    FROM {{ ref('my_table') }}\n"
+        ")\n"
+        "SELECT * FROM test\n"
+    )
+    sql_path = tmp_path / "test.sql"
+    sql_path.write_text(source)
+    config_path = tmp_path / ".sqlfluff"
+    config_path.write_text(
+        "[sqlfluff]\n"
+        "dialect = snowflake\n"
+        "templater = jinja\n"
+        "ignore = templating\n"
+        "rules = LT05\n"
+        "max_line_length = 50\n"
+    )
+
+    result = invoke_assert_code(
+        args=[lint, ["--config", str(config_path), "--format", "json", str(sql_path)]],
+        ret_code=1,
+    )
+    violations = json.loads(result.stdout)[0]["violations"]
+    assert len(violations) == 1
+    violation = violations[0]
+    assert violation["code"] == "LT05"
+    assert source[violation["start_file_pos"] : violation["end_file_pos"]] == (
+        "{{ my_very_long_macro_call_goes_here('my_very_long_column_name_goes_here') }}"
+    )
+    assert violation["start_line_no"] == violation["end_line_no"] == 3
+
+
 def test__cli__command_lint_serialize_github_annotation():
     """Test format of github-annotation output."""
     fpath = "test/fixtures/linter/identifier_capitalisation.sql"
